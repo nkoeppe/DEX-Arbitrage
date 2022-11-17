@@ -96,7 +96,7 @@ const dualTrade = async (router1, router2, baseToken, token2, amount) => {
     inTrade = false;
     // await lookForDualTrade();
   } catch (e) {
-    console.log(e.error.message)
+    console.log(e)
     console.log(`tradeAmount: ${amount}`)
     inTrade = false;
     // await lookForDualTrade();
