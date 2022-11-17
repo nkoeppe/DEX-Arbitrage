@@ -54,7 +54,7 @@ const lookForDualTrade = async () => {
     let tradeSize = balances[targetRoute.token1].balance;
     if (!!Number(tradeSize)) {
       // console.log("looking for trade")
-      tradeSize = tradeSize.mul(ethers.BigNumber.from(0.1)) 
+      tradeSize = tradeSize.div(10) 
       const amtBack = await arb.estimateDualDexTrade(targetRoute.router1, targetRoute.router2, targetRoute.token1, targetRoute.token2, tradeSize);
       const multiplier = ethers.BigNumber.from(ethers.BigNumber.from(config.minBasisPointsPerTrade).add(10000));
       const sizeMultiplied = tradeSize.mul(multiplier);
