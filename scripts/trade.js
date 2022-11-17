@@ -2,7 +2,7 @@ const hre = require("hardhat");
 const fs = require("fs");
 require("dotenv").config();
 
-let config,arb,owner,inTrade,balances;
+let config, arb, owner, inTrade, balances;
 const network = hre.network.name;
 if (network === 'aurora') config = require('./../config/aurora.json');
 if (network === 'fantom') config = require('./../config/fantom.json');
@@ -16,15 +16,17 @@ const main = async () => {
   //  await new Promise(r => setTimeout(r, i*1000));
   //  await lookForDualTrade();
   //});
-  await lookForDualTrade();
+  while (true) {
+    await lookForDualTrade();
+  }
 }
 
 const searchForRoutes = () => {
   const targetRoute = {};
-  targetRoute.router1 = config.routers[Math.floor(Math.random()*config.routers.length)].address;
-  targetRoute.router2 = config.routers[Math.floor(Math.random()*config.routers.length)].address;
-  targetRoute.token1 = config.baseAssets[Math.floor(Math.random()*config.baseAssets.length)].address;
-  targetRoute.token2 = config.tokens[Math.floor(Math.random()*config.tokens.length)].address;
+  targetRoute.router1 = config.routers[Math.floor(Math.random() * config.routers.length)].address;
+  targetRoute.router2 = config.routers[Math.floor(Math.random() * config.routers.length)].address;
+  targetRoute.token1 = config.baseAssets[Math.floor(Math.random() * config.baseAssets.length)].address;
+  targetRoute.token2 = config.tokens[Math.floor(Math.random() * config.tokens.length)].address;
   return targetRoute;
 }
 
@@ -50,41 +52,54 @@ const lookForDualTrade = async () => {
   }
   try {
     let tradeSize = balances[targetRoute.token1].balance;
-    const amtBack = await arb.estimateDualDexTrade(targetRoute.router1, targetRoute.router2, targetRoute.token1, targetRoute.token2, tradeSize);
-    const multiplier = ethers.BigNumber.from(config.minBasisPointsPerTrade+10000);
-    const sizeMultiplied = tradeSize.mul(multiplier);
-    const divider = ethers.BigNumber.from(10000);
-    const profitTarget = sizeMultiplied.div(divider);
-    if (!config.routes.length > 0) {
-      fs.appendFile(`./data/${network}RouteLog.txt`, `["${targetRoute.router1}","${targetRoute.router2}","${targetRoute.token1}","${targetRoute.token2}"],`+"\n", function (err) {});
-    }
-    if (amtBack.gt(profitTarget)) {
-      await dualTrade(targetRoute.router1,targetRoute.router2,targetRoute.token1,targetRoute.token2,tradeSize);
+    if (!!Number(tradeSize)) {
+      // console.log("looking for trade")
+      // tradeSize = ethers.BigNumber.from("10656754554368405000")
+      const amtBack = await arb.estimateDualDexTrade(targetRoute.router1, targetRoute.router2, targetRoute.token1, targetRoute.token2, tradeSize);
+      const multiplier = ethers.BigNumber.from(ethers.BigNumber.from(config.minBasisPointsPerTrade).add(10000));
+      const sizeMultiplied = tradeSize.mul(multiplier);
+      const divider = ethers.BigNumber.from(10000);
+      const profitTarget = sizeMultiplied.div(divider);
+      if (!config.routes.length > 0) {
+        fs.appendFile(`./data/${network}RouteLog.txt`, `["${targetRoute.router1}","${targetRoute.router2}","${targetRoute.token1}","${targetRoute.token2}"],` + "\n", function (err) { });
+      }
+      if (amtBack.gt(profitTarget)) {
+          console.log(`> Making dualTrade... for ${amtBack.sub(profitTarget)}`); 
+        await dualTrade(targetRoute.router1, targetRoute.router2, targetRoute.token1, targetRoute.token2, tradeSize);
+      }
+      else {
+        //     await lookForDualTrade();
+      }
     } else {
-      await lookForDualTrade();
+      //   await lookForDualTrade();
     }
   } catch (e) {
     console.log(e);
-    await lookForDualTrade();	
+    // await lookForDualTrade();
   }
 }
 
-const dualTrade = async (router1,router2,baseToken,token2,amount) => {
+const dualTrade = async (router1, router2, baseToken, token2, amount) => {
   if (inTrade === true) {
-    await lookForDualTrade();	
+    // await lookForDualTrade();
     return false;
   }
+
   try {
     inTrade = true;
-    console.log('> Making dualTrade...');
-    const tx = await arb.connect(owner).dualDexTrade(router1, router2, baseToken, token2, amount); //{ gasPrice: 1000000000003, gasLimit: 500000 }
-    await tx.wait();
+    // console.log(`${router1},${router2},${baseToken},${token2},${amount}`)
+    const txstatic = await arb.connect(owner).callStatic.dualDexTrade(router1, router2, baseToken, token2, amount, { gasPrice: 100003, gasLimit: 500000 }); //{ gasPrice: 1000000000003, gasLimit: 500000 }
+    const tx = await arb.connect(owner).dualDexTrade(router1, router2, baseToken, token2, amount, { gasPrice: 100003, gasLimit: 500000 }); //{ gasPrice: 1000000000003, gasLimit: 500000 }
+    const x = await tx.wait();
+    console.log("######TRADE SUCCESSFULL######")
+
     inTrade = false;
-    await lookForDualTrade();
+    // await lookForDualTrade();
   } catch (e) {
-    console.log(e);
+    console.log(e.error.message)
+    console.log(`tradeAmount: ${amount}`)
     inTrade = false;
-    await lookForDualTrade();
+    // await lookForDualTrade();
   }
 }
 
@@ -106,31 +121,35 @@ const setup = async () => {
     setInterval(() => {
       logResults();
     }, 600000);
+    // }, 60);
     logResults();
   }, 120000);
+  // }, 120);
 }
 
 const logResults = async () => {
   console.log(`############# LOGS #############`);
-    for (let i = 0; i < config.baseAssets.length; i++) {
+  for (let i = 0; i < config.baseAssets.length; i++) {
     const asset = config.baseAssets[i];
     const interface = await ethers.getContractFactory('WETH9');
     const assetToken = await interface.attach(asset.address);
     balances[asset.address].balance = await assetToken.balanceOf(config.arbContract);
     const diff = balances[asset.address].balance.sub(balances[asset.address].startBalance);
-    const basisPoints = diff.mul(10000).div(balances[asset.address].startBalance);
+    const basisPoints = diff.mul(10000).div(!!Number(balances[asset.address].startBalance) ? balances[asset.address].startBalance : 1);
     console.log(`#  ${asset.sym}: ${basisPoints.toString()}bps`);
   }
 }
 
-process.on('uncaughtException', function(err) {
+process.on('uncaughtException', function (err) {
   console.log('UnCaught Exception 83: ' + err);
   console.error(err.stack);
-  fs.appendFile('./critical.txt', err.stack, function(){ });
+  fs.appendFile('./critical.txt', err.stack, function () { });
 });
 
 process.on('unhandledRejection', (reason, p) => {
-  console.log('Unhandled Rejection at: '+p+' - reason: '+reason);
+  console.log('Unhandled Rejection at: ')
+  console.log(p)
+  console.log(' - reason: ' + reason);
 });
 
 main()
